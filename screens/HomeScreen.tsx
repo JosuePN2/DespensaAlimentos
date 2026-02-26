@@ -113,6 +113,7 @@ export default function HomeScreen() {
 
   const getStatusColor = (validadeStr: string) => {
     const diff = Math.ceil((new Date(validadeStr).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+    if (diff < 0) return '#8e44ad' 
     if (diff <= 3) return '#ff4d4d';
     if (diff <= 7) return '#ffa500';
     return '#2ecc71';
@@ -135,7 +136,7 @@ export default function HomeScreen() {
 
         <View style={styles.row}>
           <TouchableOpacity style={styles.dateButton} onPress={() => setShowDatePicker(true)}>
-            <Text style={styles.dateButtonText}>📅 {dataValidade.toLocaleDateString('pt-BR')}</Text>
+            <Text style={styles.dateButtonText}>Validade: {dataValidade.toLocaleDateString('pt-BR')}</Text>
           </TouchableOpacity>
 
           <View style={styles.quantityContainer}>
