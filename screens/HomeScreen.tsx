@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   StyleSheet, Text, View, FlatList, SafeAreaView, 
-  TextInput, TouchableOpacity, Keyboard, ActivityIndicator, Alert, ScrollView 
+  TextInput, TouchableOpacity, Keyboard, ActivityIndicator, Alert, RefreshControl 
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons'; 
@@ -25,16 +25,18 @@ export default function HomeScreen() {
   const [quantidade, setQuantidade] = useState(1);
   const [itens, setItens] = useState<ItemDespensa[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false); // Novo estado para Pull-to-Refresh
   const [dataValidade, setDataValidade] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
 
   const { sortBy, isDarkMode } = useSettings();
 
-  const fetchItens = useCallback(async () => {
+  // Função de busca com parâmetro isSilent para evitar o "pulo" na tela
+  const fetchItens = useCallback(async (isSilent = false) => {
     try {
-      setLoading(true);
-      // Buscamos a lista bruta. O agrupamento será feito no frontend para flexibilidade.
+      if (!isSilent) setLoading(true);
+      
       const { data, error } = await supabase.from('itens_despensa').select('*');
       if (error) throw error;
       setItens(data || []);
@@ -42,6 +44,7 @@ export default function HomeScreen() {
       Alert.alert('Erro', error.message);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -49,7 +52,11 @@ export default function HomeScreen() {
     fetchItens();
   }, [fetchItens]);
 
-  // Lógica de Agrupamento e Ordenação dos Grupos
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchItens(true);
+  };
+
   const getItensAgrupados = () => {
     const grupos: { [key: string]: GrupoItem } = {};
 
@@ -59,7 +66,6 @@ export default function HomeScreen() {
       }
       grupos[item.nome].subItems.push(item);
       
-      // Atualiza a data mais próxima do grupo
       if (item.validade < grupos[item.nome].dataMaisProxima) {
         grupos[item.nome].dataMaisProxima = item.validade;
       }
@@ -67,7 +73,6 @@ export default function HomeScreen() {
 
     const listaGrupos = Object.values(grupos);
 
-    // Ordenação dos grupos baseada na preferência do usuário
     return listaGrupos.sort((a, b) => {
       if (sortBy === 'data-asc') return a.dataMaisProxima.localeCompare(b.dataMaisProxima);
       if (sortBy === 'data-desc') return b.dataMaisProxima.localeCompare(a.dataMaisProxima);
@@ -80,7 +85,6 @@ export default function HomeScreen() {
   const adicionarItem = async () => {
     if (nome.trim() === '') return;
     try {
-      // Criamos um array de objetos para inserção múltipla (Bulk Insert)
       const novosItens = Array.from({ length: quantidade }).map(() => ({
         nome: nome.trim(),
         validade: dataValidade.toISOString().split('T')[0]
@@ -92,7 +96,7 @@ export default function HomeScreen() {
       setNome('');
       setQuantidade(1);
       setDataValidade(new Date());
-      fetchItens();
+      fetchItens(true); // Atualização silenciosa após adicionar
       Keyboard.dismiss();
     } catch (error: any) {
       Alert.alert('Erro', error.message);
@@ -101,8 +105,11 @@ export default function HomeScreen() {
 
   const excluirUmItem = async (id: string) => {
     const { error } = await supabase.from('itens_despensa').delete().eq('id', id);
-    if (!error) fetchItens();
-    else Alert.alert("Erro", "Não foi possível excluir o item.");
+    if (!error) {
+      fetchItens(true); // Atualização silenciosa evita que a lista "pule"
+    } else {
+      Alert.alert("Erro", "Não foi possível excluir o item.");
+    }
   };
 
   const toggleExpand = (nome: string) => {
@@ -113,7 +120,7 @@ export default function HomeScreen() {
 
   const getStatusColor = (validadeStr: string) => {
     const diff = Math.ceil((new Date(validadeStr).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-    if (diff < 0) return '#8e44ad' 
+    //if (diff < 0) return '#8e44ad'; 
     if (diff <= 3) return '#ff4d4d';
     if (diff <= 7) return '#ffa500';
     return '#2ecc71';
@@ -169,8 +176,13 @@ export default function HomeScreen() {
         <FlatList
           data={getItensAgrupados()}
           keyExtractor={(item) => item.nome}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#007AFF" />
+          }
           renderItem={({ item: grupo }) => {
             const isExpanded = expandedItems.includes(grupo.nome);
+            const qtd = grupo.subItems.length;
+
             return (
               <View style={[styles.card, themeCard]}>
                 <TouchableOpacity 
@@ -178,11 +190,9 @@ export default function HomeScreen() {
                   onPress={() => toggleExpand(grupo.nome)}
                 >
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.itemName, themeText]}>
-                      {grupo.nome} ({grupo.subItems.length})
-                    </Text>
-                    <Text style={styles.itemDate}>
-                      Mais próximo: {new Date(grupo.dataMaisProxima).toLocaleDateString('pt-BR')}
+                    <Text style={[styles.itemName, themeText]}>{grupo.nome}</Text>
+                    <Text style={styles.itemSubtitle}>
+                      Quantidade: {qtd} {qtd === 1 ? 'unidade' : 'unidades'} • Vence: {new Date(grupo.dataMaisProxima).toLocaleDateString('pt-BR')}
                     </Text>
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -200,7 +210,7 @@ export default function HomeScreen() {
                     {grupo.subItems.map((sub) => (
                       <View key={sub.id} style={styles.subItemRow}>
                         <Text style={[styles.subItemText, themeText]}>
-                          Vence em {new Date(sub.validade).toLocaleDateString('pt-BR')}
+                          📅 {new Date(sub.validade).toLocaleDateString('pt-BR')}
                         </Text>
                         <TouchableOpacity onPress={() => excluirUmItem(sub.id)}>
                           <Ionicons name="trash-outline" size={18} color="#ff4d4d" />
@@ -241,7 +251,7 @@ const styles = StyleSheet.create({
   darkCard: { backgroundColor: '#1e1e1e' },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   itemName: { fontSize: 18, fontWeight: '600' },
-  itemDate: { fontSize: 12, color: '#888', marginTop: 2 },
+  itemSubtitle: { fontSize: 12, color: '#888', marginTop: 2 }, // Novo estilo para quantidade
   badge: { width: 10, height: 10, borderRadius: 5 },
   expandedContent: { marginTop: 10, borderTopWidth: 0.5, borderColor: '#eee', paddingTop: 5 },
   subItemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 0.2, borderColor: '#ccc' },
