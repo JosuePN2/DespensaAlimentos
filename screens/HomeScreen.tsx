@@ -25,18 +25,17 @@ export default function HomeScreen() {
   const [quantidade, setQuantidade] = useState(1);
   const [itens, setItens] = useState<ItemDespensa[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false); // Novo estado para Pull-to-Refresh
+  const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [dataValidade, setDataValidade] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
 
   const { sortBy, isDarkMode } = useSettings();
 
-  // Função de busca com parâmetro isSilent para evitar o "pulo" na tela
   const fetchItens = useCallback(async (isSilent = false) => {
     try {
       if (!isSilent) setLoading(true);
-      
       const { data, error } = await supabase.from('itens_despensa').select('*');
       if (error) throw error;
       setItens(data || []);
@@ -65,13 +64,18 @@ export default function HomeScreen() {
         grupos[item.nome] = { nome: item.nome, subItems: [], dataMaisProxima: item.validade };
       }
       grupos[item.nome].subItems.push(item);
-      
       if (item.validade < grupos[item.nome].dataMaisProxima) {
         grupos[item.nome].dataMaisProxima = item.validade;
       }
     });
 
-    const listaGrupos = Object.values(grupos);
+    let listaGrupos = Object.values(grupos);
+
+    if (searchQuery.trim() !== '') {
+      listaGrupos = listaGrupos.filter(g => 
+        g.nome.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
 
     return listaGrupos.sort((a, b) => {
       if (sortBy === 'data-asc') return a.dataMaisProxima.localeCompare(b.dataMaisProxima);
@@ -96,20 +100,51 @@ export default function HomeScreen() {
       setNome('');
       setQuantidade(1);
       setDataValidade(new Date());
-      fetchItens(true); // Atualização silenciosa após adicionar
+      fetchItens(true);
       Keyboard.dismiss();
     } catch (error: any) {
       Alert.alert('Erro', error.message);
     }
   };
 
-  const excluirUmItem = async (id: string) => {
-    const { error } = await supabase.from('itens_despensa').delete().eq('id', id);
-    if (!error) {
-      fetchItens(true); // Atualização silenciosa evita que a lista "pule"
-    } else {
-      Alert.alert("Erro", "Não foi possível excluir o item.");
-    }
+  // FUNÇÃO ATUALIZADA: Agora pergunta se quer mover para a lista de compras
+  const excluirUmItem = async (id: string, nomeItem: string) => {
+    Alert.alert(
+      "Remover Item",
+      `O produto "${nomeItem}" acabou? Deseja adicioná-lo à sua lista de compras?`,
+      [
+        {
+          text: "Cancelar",
+          style: "cancel"
+        },
+        {
+          text: "Apenas Excluir",
+          onPress: async () => {
+            const { error } = await supabase.from('itens_despensa').delete().eq('id', id);
+            if (!error) fetchItens(true);
+          },
+          style: "destructive"
+        },
+        {
+          text: "Mover p/ Compras",
+          onPress: async () => {
+            // 1. Adiciona na lista de compras
+            const { error: insertError } = await supabase.from('lista_compras').insert([
+              { nome: nomeItem, quantidade: 1 }
+            ]);
+            
+            if (insertError) {
+              Alert.alert("Erro", "Não foi possível adicionar à lista de compras.");
+              return;
+            }
+
+            // 2. Remove da despensa
+            const { error: deleteError } = await supabase.from('itens_despensa').delete().eq('id', id);
+            if (!deleteError) fetchItens(true);
+          }
+        }
+      ]
+    );
   };
 
   const toggleExpand = (nome: string) => {
@@ -120,7 +155,7 @@ export default function HomeScreen() {
 
   const getStatusColor = (validadeStr: string) => {
     const diff = Math.ceil((new Date(validadeStr).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-    //if (diff < 0) return '#8e44ad'; 
+    // if (diff < 0) return '#8e44ad'; // Roxo para itens vencidos (comentado conforme pedido)
     if (diff <= 3) return '#ff4d4d';
     if (diff <= 7) return '#ffa500';
     return '#2ecc71';
@@ -132,6 +167,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={[styles.container, themeContainer]}>
+      {/* Formulário */}
       <View style={[styles.form, isDarkMode && { backgroundColor: '#1e1e1e' }]}>
         <TextInput 
           style={[styles.input, themeText]}
@@ -170,6 +206,23 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Busca */}
+      <View style={[styles.searchContainer, isDarkMode && { backgroundColor: '#1e1e1e' }]}>
+        <Ionicons name="search" size={20} color="#888" style={{ marginRight: 10 }} />
+        <TextInput
+          style={[styles.searchInput, themeText]}
+          placeholder="Pesquisar na despensa..."
+          placeholderTextColor={isDarkMode ? '#888' : '#999'}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <Ionicons name="close-circle" size={20} color="#888" />
+          </TouchableOpacity>
+        )}
+      </View>
+
       {loading ? (
         <ActivityIndicator size="large" color="#007AFF" />
       ) : (
@@ -192,7 +245,7 @@ export default function HomeScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.itemName, themeText]}>{grupo.nome}</Text>
                     <Text style={styles.itemSubtitle}>
-                      Quantidade: {qtd} {qtd === 1 ? 'unidade' : 'unidades'} • Vence: {new Date(grupo.dataMaisProxima).toLocaleDateString('pt-BR')}
+                      {qtd} {qtd === 1 ? 'unidade' : 'unidades'} • Vence: {new Date(grupo.dataMaisProxima).toLocaleDateString('pt-BR')}
                     </Text>
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -212,7 +265,7 @@ export default function HomeScreen() {
                         <Text style={[styles.subItemText, themeText]}>
                           📅 {new Date(sub.validade).toLocaleDateString('pt-BR')}
                         </Text>
-                        <TouchableOpacity onPress={() => excluirUmItem(sub.id)}>
+                        <TouchableOpacity onPress={() => excluirUmItem(sub.id, grupo.nome)}>
                           <Ionicons name="trash-outline" size={18} color="#ff4d4d" />
                         </TouchableOpacity>
                       </View>
@@ -222,7 +275,11 @@ export default function HomeScreen() {
               </View>
             );
           }}
-          ListEmptyComponent={<Text style={styles.empty}>Sua despensa está vazia.</Text>}
+          ListEmptyComponent={
+            <Text style={styles.empty}>
+              {searchQuery ? "Nenhum produto encontrado." : "Sua despensa está vazia."}
+            </Text>
+          }
         />
       )}
     </SafeAreaView>
@@ -235,7 +292,7 @@ const styles = StyleSheet.create({
   darkContainer: { backgroundColor: '#121212' },
   lightText: { color: '#333' },
   darkText: { color: '#fff' },
-  form: { backgroundColor: '#fff', padding: 15, borderRadius: 15, marginBottom: 20, elevation: 4 },
+  form: { backgroundColor: '#fff', padding: 15, borderRadius: 15, marginBottom: 15, elevation: 4 },
   input: { borderBottomWidth: 1, borderColor: '#eee', padding: 10, marginBottom: 15, fontSize: 16 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   dateButton: { backgroundColor: '#f0f0f0', padding: 12, borderRadius: 8, flex: 1, marginRight: 10, alignItems: 'center' },
@@ -246,12 +303,23 @@ const styles = StyleSheet.create({
   qtyText: { marginHorizontal: 10, fontSize: 16, fontWeight: 'bold' },
   addButton: { backgroundColor: '#007AFF', padding: 15, borderRadius: 10, alignItems: 'center' },
   addButtonText: { color: '#fff', fontWeight: 'bold' },
+  searchContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#fff', 
+    paddingHorizontal: 15, 
+    borderRadius: 12, 
+    marginBottom: 15, 
+    height: 50,
+    elevation: 2 
+  },
+  searchInput: { flex: 1, fontSize: 16 },
   card: { padding: 15, borderRadius: 12, marginBottom: 10, elevation: 2 },
   lightCard: { backgroundColor: '#fff' },
   darkCard: { backgroundColor: '#1e1e1e' },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   itemName: { fontSize: 18, fontWeight: '600' },
-  itemSubtitle: { fontSize: 12, color: '#888', marginTop: 2 }, // Novo estilo para quantidade
+  itemSubtitle: { fontSize: 12, color: '#888', marginTop: 2 },
   badge: { width: 10, height: 10, borderRadius: 5 },
   expandedContent: { marginTop: 10, borderTopWidth: 0.5, borderColor: '#eee', paddingTop: 5 },
   subItemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 0.2, borderColor: '#ccc' },

@@ -4,6 +4,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import HomeScreen from './screens/HomeScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import ShoppingListScreen from './screens/ShoppingListScreen'; // 1. Importação da nova tela
 import { StatusBar } from 'expo-status-bar';
 
 // Importamos os ícones aqui
@@ -19,23 +20,23 @@ function NavigationWrapper() {
       <StatusBar style={isDarkMode ? 'light' : 'dark'} />
       <Tab.Navigator 
         screenOptions={({ route }) => ({
-          // Lógica para definir o ícone de cada aba
           tabBarIcon: ({ focused, color, size }) => {
             let iconName: any;
 
+            // 2. Lógica de ícones atualizada para incluir a lista de compras
             if (route.name === 'Despensa') {
               iconName = focused ? 'basket' : 'basket-outline';
+            } else if (route.name === 'Compras') {
+              iconName = focused ? 'cart' : 'cart-outline';
             } else if (route.name === 'Ajustes') {
               iconName = focused ? 'settings' : 'settings-outline';
             }
 
-            // Retorna o componente de ícone
             return <Ionicons name={iconName} size={size} color={color} />;
           },
           tabBarActiveTintColor: '#007AFF',
           tabBarInactiveTintColor: 'gray',
           headerShown: true,
-          // Ajuste visual para o dark mode no header
           headerStyle: {
             backgroundColor: isDarkMode ? '#1e1e1e' : '#fff',
           },
@@ -47,6 +48,14 @@ function NavigationWrapper() {
           component={HomeScreen} 
           options={{ title: 'Minha Despensa' }}
         />
+
+        {/* 3. Nova Aba adicionada no meio */}
+        <Tab.Screen 
+          name="Compras" 
+          component={ShoppingListScreen} 
+          options={{ title: 'Lista de Compras' }}
+        />
+
         <Tab.Screen 
           name="Ajustes" 
           component={SettingsScreen} 
