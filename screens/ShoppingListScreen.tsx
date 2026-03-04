@@ -82,7 +82,7 @@ export default function ShoppingListScreen() {
 
   return (
     <SafeAreaView style={[styles.container, themeContainer]}>
-      <Text style={[styles.title, themeText]}>Lista de Compras</Text>
+      {/* <Text style={[styles.title, themeText]}>Lista de Compras</Text> */}
 
       {loading ? (
         <ActivityIndicator size="large" color="#007AFF" />

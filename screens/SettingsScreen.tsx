@@ -9,7 +9,7 @@ export default function SettingsScreen() {
 
   return (
     <View style={[styles.container, themeStyles.container]}>
-      <Text style={[styles.title, themeStyles.text]}>Configurações</Text>
+      {/* <Text style={[styles.title, themeStyles.text]}>Configurações</Text> */}
 
       <View style={styles.section}>
         <Text style={themeStyles.text}>Tema Escuro</Text>
